@@ -39,5 +39,5 @@ jobs:
 
     - name: Upload results to Firebase Storage
       run: |
-        firebase storage:upload lynis-result.txt --bucket your-firebase-bucket-name --path /lynis-results/$(date +%F-%H-%M-%S)-lynis-result.txt
-        firebase storage:upload lynis_summary.png --bucket your-firebase-bucket-name --path /lynis-results/$(date +%F-%H-%M-%S)-lynis-summary.png
+        firebase storage:upload lynis-result.txt --bucket flutter-firebase-auth-b4967.appspot.com --path /lynis-results/$(date +%F-%H-%M-%S)-lynis-result.txt
+        firebase storage:upload lynis_summary.png --bucket flutter-firebase-auth-b4967.appspot.com --path /lynis-results/$(date +%F-%H-%M-%S)-lynis-summary.png

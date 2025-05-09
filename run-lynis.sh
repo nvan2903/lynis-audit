@@ -1,23 +1,10 @@
 #!/bin/bash
+lynis audit system > /lynis-result.txt
 
-echo "[INFO] Bắt đầu audit hệ thống bằng Lynis..."
+# Gửi thông báo qua Slack
+# SLACK_WEBHOOK_URL="https://hooks.slack.com/services/xxx/yyy/zzz"
+# SUMMARY=$(cat /lynis-result.txt | grep -E "\[WARNING\]|\[PASS\]" | head -n 10)
+# curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"Lynis Audit Report ($(date)):\n$SUMMARY\"}" $SLACK_WEBHOOK_URL
 
-lynis audit system --quick > lynis-result.txt
-
-# Đếm cảnh báo nghiêm trọng
-CRITICAL_WARNINGS=$(grep -Ei "\[WARNING\].*(ssh|firewall|kernel|root)" lynis-result.txt | wc -l)
-
-if [ "$CRITICAL_WARNINGS" -gt 0 ]; then
-    echo "[FAIL] Có $CRITICAL_WARNINGS cảnh báo nghiêm trọng!"
-
-    # Gửi email (nếu muốn)
-    # echo "Xem chi tiết trong file đính kèm." | mail -s "Cảnh báo bảo mật Lynis" -A lynis-result.txt your@email.com
-
-    # Upload lên server (nếu có)
-    # scp lynis-result.txt user@192.168.x.x:/log-server/
-
-    exit 1
-else
-    echo "[PASS] Không có vấn đề nghiêm trọng."
-    exit 0
-fi
+# Gửi email
+echo "Lynis Audit Report ($(date))\nSee attached results." | mail -s "Lynis Audit Report" -A /lynis-result.txt tnvan2903@gmail.com

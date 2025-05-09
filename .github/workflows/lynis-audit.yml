@@ -1,0 +1,43 @@
+name: Lynis Security Audit
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Firebase CLI
+      uses: wzieba/Firebase-action@v2
+      with:
+        firebase_service_account: ${{ secrets.FIREBASE_CREDENTIALS }}
+
+    - name: Build Lynis image
+      run: |
+        docker build -t lynis-audit .
+
+    - name: Simulate security risk
+      run: |
+        ./simulate_risk.sh
+
+    - name: Run Lynis audit
+      run: |
+        docker run --rm --cap-add=SYS_ADMIN --cap-add=AUDIT_CONTROL -v /tmp:/tmp lynis-audit > lynis-result.txt
+
+    - name: Analyze results
+      run: |
+        python3 analyze_lynis.py
+
+    - name: Upload results to Firebase Storage
+      run: |
+        firebase storage:upload lynis-result.txt --bucket your-firebase-bucket-name --path /lynis-results/$(date +%F-%H-%M-%S)-lynis-result.txt
+        firebase storage:upload lynis_summary.png --bucket your-firebase-bucket-name --path /lynis-results/$(date +%F-%H-%M-%S)-lynis-summary.png

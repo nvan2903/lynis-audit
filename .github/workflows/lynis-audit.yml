@@ -41,11 +41,20 @@ jobs:
           # Authenticate with service account
           gcloud auth activate-service-account --key-file="${HOME}/firebase_credentials.json" --project=flutter-firebase-auth-b4967
 
-      - name: Authenticate Firebase
+      - name: Setup Firebase
         run: |
+          # Set credentials
           export GOOGLE_APPLICATION_CREDENTIALS="${HOME}/firebase_credentials.json"
-          # Skip interactive login since we're using service account
-          firebase use flutter-firebase-auth-b4967 --token "${{ secrets.FIREBASE_TOKEN }}"
+          
+          # Initialize Firebase with service account
+          firebase init --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive --project flutter-firebase-auth-b4967 || true
+          
+          # Set project
+          firebase projects:list --token "${{ secrets.FIREBASE_TOKEN }}" || true
+          firebase use flutter-firebase-auth-b4967 --token "${{ secrets.FIREBASE_TOKEN }}" || true
+          
+          # Verify authentication
+          firebase login:list --token "${{ secrets.FIREBASE_TOKEN }}" || true
 
       - name: Set up Python
         uses: actions/setup-python@v4

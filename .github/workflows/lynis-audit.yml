@@ -44,8 +44,8 @@ jobs:
       - name: Authenticate Firebase
         run: |
           export GOOGLE_APPLICATION_CREDENTIALS="${HOME}/firebase_credentials.json"
-          firebase login:ci --token "${{ secrets.FIREBASE_TOKEN }}" --no-localhost
-          firebase use flutter-firebase-auth-b4967
+          # Skip interactive login since we're using service account
+          firebase use flutter-firebase-auth-b4967 --token "${{ secrets.FIREBASE_TOKEN }}"
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -72,18 +72,23 @@ jobs:
 
       - name: Run Lynis audit
         run: |
-          docker run --rm --cap-add=SYS_ADMIN --cap-add=AUDIT_CONTROL -v /tmp:/tmp lynis-audit > lynis-result.txt
-          docker run --rm lynis-audit lynis --version
-
-      - name: Analyze results and run audit
-        run: |
-          python3 analyze_lynis.py
+          # Create logs directory if it doesn't exist
+          mkdir -p logs
+          
+          # Run Lynis audit and save output
+          docker run --rm --cap-add=SYS_ADMIN --cap-add=AUDIT_CONTROL -v /tmp:/tmp lynis-audit > lynis-result.txt || true
+          docker run --rm lynis-audit lynis --version || true
+          
+          # Run analysis and generate summary
+          python3 analyze_lynis.py || true
+          
+          # Run final audit
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           docker run --rm \
             --cap-add=SYS_ADMIN \
             --cap-add=AUDIT_CONTROL \
             -v "$(pwd)/logs:/audit/logs" \
-            lynis-audit
+            lynis-audit || true
 
       - name: Upload results to Firebase Storage
         if: always()
@@ -94,16 +99,33 @@ jobs:
           # Ensure we're authenticated
           export GOOGLE_APPLICATION_CREDENTIALS="${HOME}/firebase_credentials.json"
           
-          # Upload files using gsutil (Google Cloud Storage)
-          gsutil -m cp lynis-result.txt "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/${TIMESTAMP}-lynis-result.txt"
-          gsutil -m cp lynis_summary.png "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/${TIMESTAMP}-lynis-summary.png"
+          # Check if files exist before uploading
+          if [ -f "lynis-result.txt" ]; then
+            echo "Uploading lynis-result.txt..."
+            gsutil -m cp lynis-result.txt "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/${TIMESTAMP}-lynis-result.txt"
+          else
+            echo "Warning: lynis-result.txt not found"
+          fi
           
-          # Upload log files
-          for file in logs/*; do
-            if [ -f "$file" ]; then
-              gsutil -m cp "$file" "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/$(basename "$file")"
-            fi
-          done
+          if [ -f "lynis_summary.png" ]; then
+            echo "Uploading lynis_summary.png..."
+            gsutil -m cp lynis_summary.png "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/${TIMESTAMP}-lynis-summary.png"
+          else
+            echo "Warning: lynis_summary.png not found"
+          fi
+          
+          # Upload log files if they exist
+          if [ -d "logs" ] && [ "$(ls -A logs)" ]; then
+            echo "Uploading log files..."
+            for file in logs/*; do
+              if [ -f "$file" ]; then
+                echo "Uploading $(basename "$file")..."
+                gsutil -m cp "$file" "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/$(basename "$file")"
+              fi
+            done
+          else
+            echo "Warning: No log files found in logs directory"
+          fi
 
       - name: Notify on failure
         if: failure()

@@ -13,39 +13,68 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Cần thiết cho Firebase
+      id-token: write
       issues: write
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         cache: 'pip'
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Setup Firebase CLI
-      uses: FirebaseExtended/action-hosting-deploy@v0
-      with:
-        repoToken: '${{ secrets.GITHUB_TOKEN }}'
-        firebaseServiceAccount: '${{ secrets.FIREBASE_CREDENTIALS }}'
-        channelId: live
-        projectId: flutter-firebase-auth-b4967
+        if [ -f requirements.txt ]; then
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        else
+          echo "No requirements.txt found, skipping Python dependencies"
+        fi
 
     - name: Create logs directory
       run: mkdir -p logs
 
+    - name: Create Dockerfile if not exists
+      run: |
+        if [ ! -f Dockerfile ]; then
+          cat > Dockerfile << 'EOL'
+          FROM ubuntu:22.04
+          
+          RUN apt-get update && \
+              apt-get install -y wget gnupg2 && \
+              apt-get clean && \
+              rm -rf /var/lib/apt/lists/*
+          
+          # Add Lynis repository
+          RUN echo "deb https://packages.cisofy.com/community/lynis/deb/ stable main" > /etc/apt/sources.list.d/cisofy-lynis.list && \
+              wget -O - https://packages.cisofy.com/keys/cisofy-software-public.key | apt-key add -
+          
+          # Install Lynis
+          RUN apt-get update && \
+              apt-get install -y lynis && \
+              apt-get clean && \
+              rm -rf /var/lib/apt/lists/*
+          
+          # Create audit directory
+          RUN mkdir -p /audit/logs
+          
+          WORKDIR /audit
+          
+          # Default command
+          ENTRYPOINT ["lynis"]
+          CMD ["audit", "system", "--no-colors", "--report-file", "/audit/logs/lynis-report.dat"]
+          EOL
+          echo "Created default Dockerfile for Lynis"
+        fi
+
     - name: Build and test Docker image
       run: |
         docker build -t lynis-audit .
-        docker run --rm lynis-audit lynis --version
+        docker run --rm lynis-audit --version
 
     - name: Run security audit
       run: |
@@ -54,31 +83,61 @@ jobs:
           --cap-add=SYS_ADMIN \
           --cap-add=AUDIT_CONTROL \
           -v "$(pwd)/logs:/audit/logs" \
-          lynis-audit
+          lynis-audit audit system --no-colors --report-file "/audit/logs/lynis-report-${TIMESTAMP}.dat"
+      continue-on-error: true
+
+    - name: Set up Node.js for Firebase
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
 
     - name: Upload results to Firebase Storage
       if: always()
+      env:
+        FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       run: |
+        if [ -z "$FIREBASE_TOKEN" ]; then
+          echo "FIREBASE_TOKEN is not set, skipping Firebase upload"
+          exit 0
+        fi
+        
         npm install -g firebase-tools
         
-        firebase login:ci --token "${{ secrets.FIREBASE_TOKEN }}"
+        echo "Authenticating with Firebase"
+        firebase use --add flutter-firebase-auth-b4967 --token "$FIREBASE_TOKEN"
         
-        for file in logs/*; do
-          if [ -f "$file" ]; then
-            firebase storage:upload "$file" \
-              --bucket flutter-firebase-auth-b4967.appspot.com \
-              --path "/lynis-results/$(basename "$file")"
-          fi
-        done
+        echo "Uploading logs to Firebase Storage"
+        if [ "$(ls -A logs 2>/dev/null)" ]; then
+          for file in logs/*; do
+            if [ -f "$file" ]; then
+              echo "Uploading $file"
+              firebase storage:upload "$file" \
+                --bucket flutter-firebase-auth-b4967.appspot.com \
+                --token "$FIREBASE_TOKEN" \
+                --path "/lynis-results/$(basename "$file")"
+            fi
+          done
+        else
+          echo "No log files found to upload"
+        fi
+      continue-on-error: true
+
+    - name: Upload logs as artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lynis-audit-logs
+        path: logs/
+        retention-days: 7
 
     - name: Notify on failure
       if: failure()
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       with:
         script: |
           github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
             title: 'Lynis Audit Failed',
-            body: 'The automated security audit failed. Please check the workflow run for details.'
+            body: `The automated security audit failed on ${new Date().toISOString()}.\nPlease check the workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
           })

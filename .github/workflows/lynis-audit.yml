@@ -89,34 +89,20 @@ EOL
       with:
         node-version: '18'
 
-    - name: Initialize Firebase for upload
-      if: always() && env.FIREBASE_TOKEN != ''
-      env:
-        FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+    - name: Install Firebase CLI
+      if: always() && secrets.FIREBASE_TOKEN != ''
       run: |
-        if [ -z "$FIREBASE_TOKEN" ]; then
-          echo "FIREBASE_TOKEN is not set, skipping Firebase upload"
-          exit 0
-        fi
-        
         npm install -g firebase-tools
-        
-        # Initialize Firebase project
-        echo "Initializing Firebase project"
-        firebase init --token "$FIREBASE_TOKEN" storage --project flutter-firebase-auth-b4967 --non-interactive
+        echo "Firebase CLI installed"
 
     - name: Upload results to Firebase Storage
-      if: always() && env.FIREBASE_TOKEN != ''
+      if: always() && secrets.FIREBASE_TOKEN != ''
       env:
         FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       run: |
-        if [ -z "$FIREBASE_TOKEN" ]; then
-          echo "FIREBASE_TOKEN is not set, skipping Firebase upload"
-          exit 0
-        fi
-        
         echo "Uploading logs to Firebase Storage"
         if [ "$(ls -A logs 2>/dev/null)" ]; then
+          firebase login:ci --token "$FIREBASE_TOKEN"
           for file in logs/*; do
             if [ -f "$file" ]; then
               echo "Uploading $file"

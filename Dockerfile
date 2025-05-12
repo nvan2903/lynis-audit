@@ -2,35 +2,36 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Cài đặt các công cụ cần thiết
+# Install required tools
 RUN apt-get update && apt-get install -y \
     git \
     sudo \
-    mailutils \
     python3 \
     python3-pip \
-    curl
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
 
-# Cài đặt thư viện Python để phân tích kết quả
-RUN pip3 install matplotlib
+# Install Python libraries for analysis
+RUN pip3 install matplotlib numpy
 
-# Tải Lynis từ GitHub (CISOfy)
+# Clone Lynis from GitHub (CISOfy)
 RUN git clone https://github.com/CISOfy/lynis.git /opt/lynis
 
-# Tạo alias để có thể gọi 'lynis' từ bất kỳ đâu
+# Create alias to call 'lynis' from anywhere
 RUN ln -s /opt/lynis/lynis /usr/bin/lynis
 
-# Thiết lập thư mục làm việc
+# Set up working directory
 WORKDIR /audit
 
-# Copy các script vào container
+# Copy scripts into container
 COPY run-lynis.sh .
 COPY simulate_risk.sh .
 COPY analyze_lynis.py .
 
-# Cấp quyền thực thi
+# Make scripts executable
 RUN chmod +x run-lynis.sh simulate_risk.sh analyze_lynis.py
 
-# CMD mặc định
+# Default command
 CMD ["./run-lynis.sh"]
 

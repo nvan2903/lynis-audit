@@ -67,9 +67,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install matplotlib numpy
           docker build -t lynis-audit .
+          # Make simulate_risk.sh executable
+          chmod +x ./simulate_risk.sh
 
       - name: Simulate security risk
-        run: ./simulate_risk.sh
+        run: |
+          # Run with sudo since it needs root privileges
+          sudo ./simulate_risk.sh
 
       - name: Setup Firebase CLI (official)
         uses: FirebaseExtended/action-hosting-deploy@v0

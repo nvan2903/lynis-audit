@@ -22,14 +22,21 @@ jobs:
 
       - name: Install Firebase CLI
         run: |
-          npm install -g firebase-tools
+          npm install -g firebase-tools@latest
           echo "${{ secrets.FIREBASE_CREDENTIALS }}" > "${HOME}/firebase_credentials.json"
+
+      - name: Install Google Cloud SDK
+        run: |
+          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+          curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+          sudo apt-get update && sudo apt-get install -y google-cloud-sdk
+          gcloud auth activate-service-account --key-file="${HOME}/firebase_credentials.json"
 
       - name: Authenticate Firebase
         run: |
-          firebase login:ci --token "${{ secrets.FIREBASE_TOKEN }}"
-          firebase use --add --project flutter-firebase-auth-b4967
           export GOOGLE_APPLICATION_CREDENTIALS="${HOME}/firebase_credentials.json"
+          firebase login:ci --token "${{ secrets.FIREBASE_TOKEN }}" --no-localhost
+          firebase use flutter-firebase-auth-b4967
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -75,14 +82,17 @@ jobs:
           # Create timestamp for unique filenames
           TIMESTAMP=$(date +%F-%H-%M-%S)
           
-          # Upload files using correct Firebase Storage syntax
-          firebase storage:upload lynis-result.txt "lynis-results/${TIMESTAMP}-lynis-result.txt"
-          firebase storage:upload lynis_summary.png "lynis-results/${TIMESTAMP}-lynis-summary.png"
+          # Upload files using Firebase Storage
+          firebase deploy --only storage --token "${{ secrets.FIREBASE_TOKEN }}"
+          
+          # Upload files using gsutil (Google Cloud Storage)
+          gsutil cp lynis-result.txt "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/${TIMESTAMP}-lynis-result.txt"
+          gsutil cp lynis_summary.png "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/${TIMESTAMP}-lynis-summary.png"
           
           # Upload log files
           for file in logs/*; do
             if [ -f "$file" ]; then
-              firebase storage:upload "$file" "lynis-results/$(basename "$file")"
+              gsutil cp "$file" "gs://flutter-firebase-auth-b4967.appspot.com/lynis-results/$(basename "$file")"
             fi
           done
 
